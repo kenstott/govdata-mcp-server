@@ -22,8 +22,8 @@ def search_metadata(query: str) -> Dict[str, Any]:
     """
     conn = get_connection()
 
-    # Get all schemas
-    schemas_sql = "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME"
+    # Get all schemas (use quoted identifiers for lex=ORACLE)
+    schemas_sql = 'SELECT "SCHEMA_NAME" FROM information_schema."SCHEMATA" ORDER BY "SCHEMA_NAME"'
     schema_rows = conn.execute_metadata_query(schemas_sql)
 
     result = {
@@ -39,12 +39,12 @@ def search_metadata(query: str) -> Dict[str, Any]:
             "tables": []
         }
 
-        # Get tables in this schema
+        # Get tables in this schema (use quoted identifiers for lex=ORACLE)
         tables_sql = f"""
-            SELECT TABLE_NAME, TABLE_TYPE, REMARKS
-            FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = '{schema_name}'
-            ORDER BY TABLE_NAME
+            SELECT "TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT" as "REMARKS"
+            FROM information_schema."TABLES"
+            WHERE "TABLE_SCHEMA" = '{schema_name}'
+            ORDER BY "TABLE_NAME"
         """
         table_rows = conn.execute_metadata_query(tables_sql)
 
@@ -57,12 +57,12 @@ def search_metadata(query: str) -> Dict[str, Any]:
                 "columns": []
             }
 
-            # Get columns for this table
+            # Get columns for this table (use quoted identifiers for lex=ORACLE)
             columns_sql = f"""
-                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, REMARKS
-                FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA = '{schema_name}' AND TABLE_NAME = '{table_name}'
-                ORDER BY ORDINAL_POSITION
+                SELECT "COLUMN_NAME", "DATA_TYPE", "IS_NULLABLE", "COLUMN_COMMENT" as "REMARKS"
+                FROM information_schema."COLUMNS"
+                WHERE "TABLE_SCHEMA" = '{schema_name}' AND "TABLE_NAME" = '{table_name}'
+                ORDER BY "ORDINAL_POSITION"
             """
             column_rows = conn.execute_metadata_query(columns_sql)
 

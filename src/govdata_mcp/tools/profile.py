@@ -27,13 +27,13 @@ def profile_table(
     conn = get_connection()
     qualified_table = f"{schema}.{table}"
 
-    # If no columns specified, get all columns
+    # If no columns specified, get all columns (use quoted identifiers for lex=ORACLE)
     if columns is None or len(columns) == 0:
         col_sql = f"""
-            SELECT COLUMN_NAME
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}'
-            ORDER BY ORDINAL_POSITION
+            SELECT "COLUMN_NAME"
+            FROM information_schema."COLUMNS"
+            WHERE "TABLE_SCHEMA" = '{schema}' AND "TABLE_NAME" = '{table}'
+            ORDER BY "ORDINAL_POSITION"
         """
         col_results = conn.execute_metadata_query(col_sql)
         columns = [row["COLUMN_NAME"] for row in col_results]

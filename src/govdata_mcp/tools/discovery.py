@@ -15,7 +15,8 @@ def list_schemas() -> Dict[str, Any]:
         Dictionary with list of schema names
     """
     conn = get_connection()
-    sql = "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME"
+    # Use quoted identifiers with lex=ORACLE
+    sql = 'SELECT "SCHEMA_NAME" FROM information_schema."SCHEMATA" ORDER BY "SCHEMA_NAME"'
 
     try:
         results = conn.execute_metadata_query(sql)
@@ -40,19 +41,20 @@ def list_tables(schema: str, include_comments: bool = False) -> Dict[str, Any]:
     """
     conn = get_connection()
 
+    # Use quoted identifiers with lex=ORACLE
     if include_comments:
         sql = f"""
-            SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, REMARKS
-            FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = '{schema}'
-            ORDER BY TABLE_NAME
+            SELECT "TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT" as "REMARKS"
+            FROM information_schema."TABLES"
+            WHERE "TABLE_SCHEMA" = '{schema}'
+            ORDER BY "TABLE_NAME"
         """
     else:
         sql = f"""
-            SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
-            FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = '{schema}'
-            ORDER BY TABLE_NAME
+            SELECT "TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE"
+            FROM information_schema."TABLES"
+            WHERE "TABLE_SCHEMA" = '{schema}'
+            ORDER BY "TABLE_NAME"
         """
 
     try:
@@ -78,19 +80,20 @@ def describe_table(schema: str, table: str, include_comments: bool = False) -> D
     """
     conn = get_connection()
 
+    # Use quoted identifiers with lex=ORACLE
     if include_comments:
         sql = f"""
-            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, REMARKS
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}'
-            ORDER BY ORDINAL_POSITION
+            SELECT "COLUMN_NAME", "DATA_TYPE", "IS_NULLABLE", "COLUMN_COMMENT" as "REMARKS"
+            FROM information_schema."COLUMNS"
+            WHERE "TABLE_SCHEMA" = '{schema}' AND "TABLE_NAME" = '{table}'
+            ORDER BY "ORDINAL_POSITION"
         """
     else:
         sql = f"""
-            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}'
-            ORDER BY ORDINAL_POSITION
+            SELECT "COLUMN_NAME", "DATA_TYPE", "IS_NULLABLE"
+            FROM information_schema."COLUMNS"
+            WHERE "TABLE_SCHEMA" = '{schema}' AND "TABLE_NAME" = '{table}'
+            ORDER BY "ORDINAL_POSITION"
         """
 
     try:
