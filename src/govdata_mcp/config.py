@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
 
+    # OIDC / OAuth2 provider validation
+    oidc_enabled: bool = False
+    oidc_issuer_url: str | None = None  # e.g., https://login.microsoftonline.com/<tenant>/v2.0 or https://accounts.google.com
+    oidc_audience: str | None = None    # your API/application client ID or audience expected in tokens
+    oidc_jwks_url: str | None = None    # optional override; if not set, discovered from issuer
+    oidc_cache_ttl_seconds: int = 3600
+
+    # Security toggles
+    auth_allow_local_jwt_fallback: bool = False  # When OIDC is enabled, allow HS256 fallback only if explicitly set
+
     # Logging
     log_level: str = "INFO"
 
