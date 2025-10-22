@@ -158,7 +158,10 @@ class CalciteConnection:
     def connect(self) -> None:
         """Establish connection to Calcite."""
         if self._connection is None:
-            jdbc_url = f"jdbc:calcite:model={self.model_path}"
+            # Configure Calcite with proper case handling:
+            # - lex=ORACLE: Use Oracle-style quoting (double quotes for identifiers)
+            # - unquotedCasing=TO_LOWER: Lowercase unquoted identifiers
+            jdbc_url = f"jdbc:calcite:model={self.model_path};lex=ORACLE;unquotedCasing=TO_LOWER"
             logger.info(f"Connecting to Calcite: {jdbc_url}")
             logger.info("Note: Watch for Calcite/govdata adapter logs below...")
             self._connection = dbapi2.connect(
