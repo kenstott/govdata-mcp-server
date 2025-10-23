@@ -333,6 +333,41 @@ Update `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - Ensure the server is running: `curl http://127.0.0.1:8080/health`
 - Check mcp-remote logs in Claude Desktop's developer console
 
+#### Local Development Workflow
+
+To run the MCP server locally and connect with Claude Desktop:
+
+1. **Start the server:**
+   ```bash
+   ./start-server.sh
+   # Or with debug logging:
+   LOG_LEVEL=DEBUG ./start-server.sh
+   ```
+
+2. **Configure Claude Desktop** with the config shown above (using `http://127.0.0.1:8080/messages/`)
+
+3. **Restart Claude Desktop** to load the new configuration
+
+4. **Test the connection** by asking Claude: "List the available tools from the govdata MCP server"
+
+**Important - Initial Data Download:**
+⚠️ **The first time you start the server, it will download government data which can take 1-2 days** depending on your configuration:
+- SEC filings for configured CIKs and years (can be 10s of GB)
+- Economic data (FRED, BLS, BEA, Treasury)
+- Census and geographic data
+
+**Tips for faster initial setup:**
+- Reduce `startYear` and `endYear` range in `govdata-model.json` (e.g., 2020-2024 instead of 2010-2025)
+- Limit CIKs in the SEC schema (default is "DJIA" which downloads ~30 companies)
+- Set `autoDownload: false` in the model to manually control what downloads
+- Use MinIO or S3 to share downloaded data across instances
+
+**Monitoring download progress:**
+- Server logs show download progress for each data source
+- With `LOG_LEVEL=DEBUG`, you'll see detailed progress for SEC filings
+- Data is cached in `.aperio/` (local) and `s3://govdata-parquet` (S3/MinIO)
+- Subsequent starts are fast (~1-2 seconds) as cached data is reused
+
 ### Claude at Work (Remote Deployment)
 
 If you have **Claude at Work**, you can configure direct HTTP/SSE connection to a **remote** (publicly accessible) instance:
