@@ -1,0 +1,111 @@
+{
+  "version": "1.0",
+  "defaultSchema": "sec",
+  "schemas": [
+    {
+      "name": "sec",
+      "type": "custom",
+      "factory": "org.apache.calcite.adapter.govdata.GovDataSchemaFactory",
+      "operand": {
+        "dataSource": "sec",
+        "refreshInterval": "1h",
+        "executionEngine": "DUCKDB",
+        "database_filename": "shared.duckdb",
+        "ephemeralCache": false,
+        "cacheDirectory": "${GOVDATA_CACHE_DIR:govdata-cache}",
+        "directory": "${GOVDATA_PARQUET_DIR:govdata-parquet}",
+        "startYear": 2010,
+        "endYear": 2025,
+        "autoDownload": true,
+        "ciks": ["DJIA"],
+        "filingTypes": ["10-K", "10-Q", "8-K", "DEF 14A", "3", "4", "5"],
+        "fetchStockPrices": true,
+        "extractFootnotes": true,
+        "extractMDA": true,
+        "extractRiskFactors": true,
+        "textSimilarity": {
+          "enabled": true,
+          "embeddingDimension": 384,
+          "provider": "local",
+          "maxTextLength": 16384
+        }
+      }
+    },
+    {
+      "name": "econ",
+      "type": "custom",
+      "factory": "org.apache.calcite.adapter.govdata.GovDataSchemaFactory",
+      "operand": {
+        "dataSource": "econ",
+        "refreshInterval": "1h",
+        "executionEngine": "DUCKDB",
+        "database_filename": "shared.duckdb",
+        "ephemeralCache": false,
+        "cacheDirectory": "${GOVDATA_CACHE_DIR:govdata-cache}",
+        "directory": "${GOVDATA_PARQUET_DIR:govdata-parquet}",
+        "startYear": 2010,
+        "endYear": 2024,
+        "autoDownload": true,
+        "enabledSources": ["fred", "bls", "treasury", "bea"],
+        "fredApiKey": "${FRED_API_KEY}",
+        "blsApiKey": "${BLS_API_KEY}",
+        "beaApiKey": "${BEA_API_KEY}",
+        "customFredSeries": [
+          "DGS10", "DGS2", "DGS30", "UNRATE", "PAYEMS", "CPIAUCSL", "GDPC1"
+        ],
+        "fredSeriesGroups": {
+          "treasury_rates": {
+            "tableName": "fred_treasury_rates",
+            "series": ["DGS1MO", "DGS3MO", "DGS6MO", "DGS1", "DGS2", "DGS3", "DGS5", "DGS7", "DGS10", "DGS20", "DGS30"],
+            "partitionStrategy": "MANUAL",
+            "partitionFields": ["year", "maturity"],
+            "comment": "U.S. Treasury constant maturity rates for all standard maturities"
+          },
+          "employment_indicators": {
+            "tableName": "fred_employment_indicators",
+            "series": ["UNRATE", "PAYEMS", "CIVPART", "EMRATIO", "U6RATE"],
+            "partitionStrategy": "MANUAL",
+            "partitionFields": ["year"],
+            "comment": "Employment and labor force participation indicators"
+          }
+        }
+      }
+    },
+    {
+      "name": "geo",
+      "type": "custom",
+      "factory": "org.apache.calcite.adapter.govdata.GovDataSchemaFactory",
+      "operand": {
+        "dataSource": "geo",
+        "refreshInterval": "1h",
+        "executionEngine": "DUCKDB",
+        "database_filename": "shared.duckdb",
+        "ephemeralCache": false,
+        "cacheDirectory": "${GOVDATA_CACHE_DIR:govdata-cache}",
+        "directory": "${GOVDATA_PARQUET_DIR:govdata-parquet}",
+        "enabledSources": ["tiger", "hud", "census"],
+        "startYear": 2010,
+        "endYear": 2024,
+        "autoDownload": true
+      }
+    },
+    {
+      "name": "census",
+      "type": "custom",
+      "factory": "org.apache.calcite.adapter.govdata.GovDataSchemaFactory",
+      "operand": {
+        "dataSource": "census",
+        "refreshInterval": "1h",
+        "executionEngine": "DUCKDB",
+        "database_filename": "shared.duckdb",
+        "ephemeralCache": false,
+        "cacheDirectory": "${GOVDATA_CACHE_DIR:govdata-cache}",
+        "directory": "${GOVDATA_PARQUET_DIR:govdata-parquet}",
+        "startYear": 2010,
+        "endYear": 2023,
+        "autoDownload": true,
+        "censusApiKey": "${CENSUS_API_KEY}"
+      }
+    }
+  ]
+}
