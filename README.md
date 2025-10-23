@@ -119,8 +119,22 @@ Edit `.env` and configure the following:
 **Required - Calcite Configuration:**
 ```bash
 CALCITE_JAR_PATH=/path/to/calcite/govdata/build/libs/calcite-govdata-1.41.0-SNAPSHOT-all.jar
-CALCITE_MODEL_PATH=/path/to/model/govdata-model.json
+
+# For quick testing (downloads in ~5-10 minutes):
+CALCITE_MODEL_PATH=/path/to/govdata-mcp-server/govdata-model-sample.json
+
+# For full data (downloads in 1-2 days):
+# CALCITE_MODEL_PATH=/path/to/govdata-mcp-server/govdata-model.json
 ```
+
+**Model File Comparison:**
+
+| Model | Data Sources | Download Time | Use Case |
+|-------|-------------|---------------|----------|
+| `govdata-model-sample.json` | 1 company (Apple), 2023-2024, basic FRED series | ~5-10 minutes | **Testing, getting started** |
+| `govdata-model.json` | 30 DJIA companies, 2010-2025, full data sources | 1-2 days | Production, full analysis |
+
+**Recommendation:** Start with `govdata-model-sample.json` to verify everything works, then switch to the full model if needed.
 
 **Required - MCP Server Authentication:**
 ```bash
@@ -442,14 +456,22 @@ To run the MCP server locally and connect with Claude Desktop:
 4. **Test the connection** by asking Claude: "List the available tools from the govdata MCP server"
 
 **Important - Initial Data Download:**
-⚠️ **The first time you start the server, it will download government data which can take 1-2 days** depending on your configuration:
-- SEC filings for configured CIKs and years (can be 10s of GB)
-- Economic data (FRED, BLS, BEA, Treasury)
-- Census and geographic data
 
-**Tips for faster initial setup:**
-- Reduce `startYear` and `endYear` range in `govdata-model.json` (e.g., 2020-2024 instead of 2010-2025)
-- Limit CIKs in the SEC schema (default is "DJIA" which downloads ~30 companies)
+⚠️ **The first time you start the server, it will download government data:**
+
+- **Using `govdata-model-sample.json` (RECOMMENDED for testing)**: ~5-10 minutes
+  - 1 company (Apple) with 2023-2024 data
+  - Basic FRED economic series
+  - Perfect for getting started and testing
+
+- **Using `govdata-model.json` (full production data)**: 1-2 days
+  - 30 DJIA companies with 2010-2025 data (10s of GB)
+  - All economic data sources (FRED, BLS, BEA, Treasury)
+  - Census and geographic data
+
+**Tips for production configuration:**
+- Start with the sample model to verify setup
+- Edit `govdata-model.json` to adjust year ranges, CIKs, and data sources
 - Set `autoDownload: false` in the model to manually control what downloads
 - Use MinIO or S3 to share downloaded data across instances
 
