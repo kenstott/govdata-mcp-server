@@ -1,6 +1,8 @@
 # Govdata MCP Server
 
-Model Context Protocol (MCP) server for Apache Calcite's govdata adapter. Provides semantic access to US Census data, SEC filings, economic indicators, and geographic data via MCP tools.
+Model Context Protocol (MCP) server for govdata adapter. Provides semantic access to US Census data, SEC filings, economic indicators, and geographic data via MCP tools.
+
+**Note**: This server requires the Apache Calcite fork with govdata adapter from [github.com/kenstott/calcite](https://github.com/kenstott/calcite).
 
 ## Architecture
 
@@ -14,7 +16,7 @@ Model Context Protocol (MCP) server for Apache Calcite's govdata adapter. Provid
            │ JPype1 (JVM bridge)
            ▼
 ┌──────────────────────────────┐
-│  Calcite Fat JAR             │  ← Built from calcite repo
+│  Calcite Fat JAR             │  ← Built from github.com/kenstott/calcite
 │  - JDBC driver               │
 │  - Govdata adapter           │
 │  - DuckDB sub-schema         │
@@ -25,9 +27,10 @@ Model Context Protocol (MCP) server for Apache Calcite's govdata adapter. Provid
 
 - **Python 3.9+**
 - **Java 17+** (required by Calcite JAR)
-- **Calcite Fat JAR** - Build from calcite repo:
+- **Calcite Fat JAR** - Build from the [kenstott/calcite](https://github.com/kenstott/calcite) fork:
   ```bash
-  cd /path/to/calcite
+  git clone https://github.com/kenstott/calcite.git
+  cd calcite
   ./gradlew :govdata:shadowJar
   # JAR will be at: govdata/build/libs/calcite-govdata-1.41.0-SNAPSHOT-all.jar
   ```
@@ -46,19 +49,19 @@ pip install -e .  # Install the package in editable mode
 
 ### 1.5. Required JARs (Logging & DuckDB)
 
-This repo already includes the needed JARs under the lib/ directory (SLF4J binding and DuckDB JDBC). You can skip this step if they are present. If you need to (re)download them:
+Download the required JARs (SLF4J binding and DuckDB JDBC driver):
 
 ```bash
-mkdir -p lib
-
-# SLF4J 2.x binding for logging
-curl -L -o lib/slf4j-reload4j-2.0.13.jar https://repo1.maven.org/maven2/org/slf4j/slf4j-reload4j/2.0.13/slf4j-reload4j-2.0.13.jar
-
-# DuckDB JDBC driver (required if using DuckDB execution engine)
-curl -L -o lib/duckdb-jdbc-1.1.3.jar https://repo1.maven.org/maven2/org/duckdb/duckdb_jdbc/1.1.3/duckdb_jdbc-1.1.3.jar
+./download-jars.sh
 ```
 
-These JARs will be automatically added to the classpath before the Calcite JAR.
+This script will download:
+- **slf4j-reload4j-2.0.13.jar** (~11KB) - SLF4J 2.x binding for Calcite logging
+- **duckdb-jdbc-1.1.3.jar** (~70MB) - DuckDB JDBC driver for query execution
+
+These JARs will be automatically added to the classpath before the Calcite JAR when the server starts.
+
+**Note**: If the JARs are already present, the script will skip downloading them.
 
 ### 2. Configure Environment
 
@@ -73,7 +76,7 @@ Edit `.env` and configure the following:
 **Required - Calcite Configuration:**
 ```bash
 CALCITE_JAR_PATH=/path/to/calcite/govdata/build/libs/calcite-govdata-1.41.0-SNAPSHOT-all.jar
-CALCITE_MODEL_PATH=/path/to/calcite/djia-production-model.json
+CALCITE_MODEL_PATH=/path/to/model/govdata-model.json
 ```
 
 **Required - MCP Server Authentication:**
@@ -121,18 +124,33 @@ GOVDATA_DOWNLOAD_TIMEOUT_MINUTES=2147483647
 
 ### 3. Run the Server
 
+**Recommended - Using startup script (with prerequisite checks):**
+
 ```bash
 # Development mode (with auto-reload)
-python -m govdata_mcp.server
-
-# Or using the installed script
-govdata-mcp
+./start-server.sh
 
 # Production mode
+./start-server.sh prod
+
+# With debug logging
+LOG_LEVEL=DEBUG ./start-server.sh
+```
+
+**Alternative - Direct commands:**
+
+```bash
+# Using Python module
+python -m govdata_mcp.server
+
+# Using installed command
+govdata-mcp
+
+# Using uvicorn directly (production)
 uvicorn govdata_mcp.server:app --host 0.0.0.0 --port 8080
 ```
 
-The server will start on `http://0.0.0.0:8080`
+The server will start on `http://0.0.0.0:8080` (configurable via SERVER_HOST and SERVER_PORT in .env)
 
 ### 4. Test with Health Check
 
@@ -576,10 +594,13 @@ Apache License 2.0
 
 For issues related to:
 - **MCP Server**: Open issue in this repo
-- **Calcite/JDBC**: Open issue in calcite repo
-- **Data Sources**: Check govdata adapter documentation# govdata-mcp-server
+- **Calcite/JDBC**: Open issue in [kenstott/calcite](https://github.com/kenstott/calcite) repo
+- **Data Sources**: Check govdata adapter documentation in the [kenstott/calcite](https://github.com/kenstott/calcite) repo
 
+## Related Repositories
 
+- **Calcite Fork with Govdata Adapter**: [github.com/kenstott/calcite](https://github.com/kenstott/calcite)
+- **This MCP Server**: [github.com/kenstott/govdata-mcp-server](https://github.com/kenstott/govdata-mcp-server)
 
 ## MCP Client (Claude) Verification Checklist
 
