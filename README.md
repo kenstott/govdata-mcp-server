@@ -27,6 +27,10 @@ Model Context Protocol (MCP) server for govdata adapter. Provides semantic acces
 
 - **Python 3.9+**
 - **Java 17+** (required by Calcite JAR)
+- **MinIO or AWS S3** (required for data storage)
+  - The server stores Parquet files and cached data in S3-compatible storage
+  - For local development, use MinIO (lightweight S3-compatible server)
+  - For production, can use AWS S3, MinIO, or other S3-compatible services
 - **Calcite Fat JAR** - Build from the [kenstott/calcite](https://github.com/kenstott/calcite) fork:
   ```bash
   git clone https://github.com/kenstott/calcite.git
@@ -36,6 +40,45 @@ Model Context Protocol (MCP) server for govdata adapter. Provides semantic acces
   ```
 
 ## Quick Start
+
+### 0. Set Up S3 Storage (MinIO for Local Development)
+
+The server requires S3-compatible storage for data. For local development, use MinIO:
+
+**Using Docker (Recommended):**
+
+```bash
+# Start MinIO with Docker
+docker run -d \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  --name minio \
+  -v ~/minio/data:/data \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  quay.io/minio/minio server /data --console-address ":9001"
+
+# Create required buckets
+docker exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
+docker exec minio mc mb local/govdata-parquet
+docker exec minio mc mb local/govdata-production-cache
+```
+
+**Or using Homebrew (macOS):**
+
+```bash
+brew install minio/stable/minio
+minio server ~/minio/data --console-address ":9001"
+
+# In another terminal, create buckets:
+mc alias set local http://localhost:9000 minioadmin minioadmin
+mc mb local/govdata-parquet
+mc mb local/govdata-production-cache
+```
+
+**MinIO Console:** Access at http://localhost:9001 (user: minioadmin, pass: minioadmin)
+
+**For AWS S3:** Update `.env` with your AWS credentials and remove `AWS_ENDPOINT_OVERRIDE`.
 
 ### 1. Install Dependencies
 
@@ -47,7 +90,7 @@ pip install -r requirements.txt
 pip install -e .  # Install the package in editable mode
 ```
 
-### 1.5. Required JARs (Logging & DuckDB)
+### 2. Required JARs (Logging & DuckDB)
 
 Download the required JARs (SLF4J binding and DuckDB JDBC driver):
 
@@ -63,7 +106,7 @@ These JARs will be automatically added to the classpath before the Calcite JAR w
 
 **Note**: If the JARs are already present, the script will skip downloading them.
 
-### 2. Configure Environment
+### 3. Configure Environment
 
 Copy `.env.example` to `.env` and update paths:
 
@@ -122,7 +165,7 @@ If using DuckDB, ensure the DuckDB JDBC JAR is present (see Required JARs). You 
 GOVDATA_DOWNLOAD_TIMEOUT_MINUTES=2147483647
 ```
 
-### 3. Run the Server
+### 4. Run the Server
 
 **Recommended - Using startup script (with prerequisite checks):**
 
@@ -152,7 +195,7 @@ uvicorn govdata_mcp.server:app --host 0.0.0.0 --port 8080
 
 The server will start on `http://0.0.0.0:8080` (configurable via SERVER_HOST and SERVER_PORT in .env)
 
-### 4. Test with Health Check
+### 5. Test with Health Check
 
 ```bash
 curl http://0.0.0.0:8080/health
@@ -294,13 +337,63 @@ Rule of thumb:
 
 ## MCP Client Configuration
 
-### Claude Desktop (Recommended)
-
 **Note**: The browser version of Claude does not support remote MCP servers unless you have Claude at Work.
 
-For **Claude Desktop**, use the mcp-remote bridge to connect to this HTTP/SSE server.
+### Claude Desktop - Option 1: stdio Mode (Simplest for Local)
+
+For local development, run the server directly as a stdio process. This is the **simplest approach** - no separate server process needed.
 
 Update `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "govdata": {
+      "command": "python3",
+      "args": [
+        "-m",
+        "govdata_mcp.server"
+      ],
+      "env": {
+        "CALCITE_JAR_PATH": "/path/to/calcite/govdata/build/libs/calcite-govdata-1.41.0-SNAPSHOT-all.jar",
+        "CALCITE_MODEL_PATH": "/path/to/govdata-mcp-server/govdata-model.json",
+        "FRED_API_KEY": "your-fred-key",
+        "BLS_API_KEY": "your-bls-key",
+        "BEA_API_KEY": "your-bea-key",
+        "CENSUS_API_KEY": "your-census-key",
+        "AWS_ACCESS_KEY_ID": "minioadmin",
+        "AWS_SECRET_ACCESS_KEY": "minioadmin",
+        "AWS_ENDPOINT_OVERRIDE": "http://localhost:9000",
+        "GOVDATA_PARQUET_DIR": "s3://govdata-parquet",
+        "GOVDATA_CACHE_DIR": "s3://govdata-production-cache"
+      }
+    }
+  }
+}
+```
+
+**Important notes:**
+- Replace paths and API keys with your actual values
+- Ensure MinIO is running (see step 0 in Quick Start)
+- The server auto-detects stdio mode and runs without HTTP/SSE
+- Restart Claude Desktop after editing the config
+- Logs appear in Claude Desktop's developer console
+
+**Advantages:**
+- Simplest setup - no separate server process
+- No API key authentication needed
+- Perfect for local development and testing
+
+### Claude Desktop - Option 2: HTTP/SSE with mcp-remote
+
+For running the server as a separate HTTP service (useful if sharing across multiple clients or debugging):
+
+1. **Start the server separately:**
+   ```bash
+   ./start-server.sh
+   ```
+
+2. **Configure Claude Desktop:**
 
 ```json
 {
@@ -322,16 +415,14 @@ Update `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 **Important notes:**
 - Replace `your-api-key-here` with one of the keys from `API_KEYS` in your `.env`
-- Header name is case-insensitive (`X-API-Key` or `X-API-KEY` both work)
 - The `--allow-http` flag is required for local development (non-HTTPS)
 - The `--debug` flag provides verbose logging for troubleshooting
 - Restart Claude Desktop after editing the config
 
-**Troubleshooting:**
-- If connection fails, check server logs with `LOG_LEVEL=DEBUG` in `.env`
-- Verify the API key matches one in your `API_KEYS` setting
-- Ensure the server is running: `curl http://127.0.0.1:8080/health`
-- Check mcp-remote logs in Claude Desktop's developer console
+**Advantages:**
+- Server runs independently - can share across multiple clients
+- Easier to monitor with `LOG_LEVEL=DEBUG` in terminal
+- Can test with curl/HTTP tools
 
 #### Local Development Workflow
 
