@@ -294,16 +294,53 @@ Rule of thumb:
 
 ## MCP Client Configuration
 
-### Claude Desktop (Direct connection — no mcp-remote)
+### Claude Desktop (Recommended)
 
-Direct connection is recommended. Do not use an external "mcp-remote" bridge; Claude can connect to HTTP/SSE servers directly.
+**Note**: The browser version of Claude does not support MCP servers unless you have Claude at Work.
+
+For **Claude Desktop**, use the mcp-remote bridge to connect to this HTTP/SSE server.
 
 Update `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "calcite-govdata": {
+    "govdata": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://127.0.0.1:8080/messages/",
+        "--header",
+        "X-API-KEY: your-api-key-here",
+        "--debug",
+        "--allow-http"
+      ]
+    }
+  }
+}
+```
+
+**Important notes:**
+- Replace `your-api-key-here` with one of the keys from `API_KEYS` in your `.env`
+- Header name is case-insensitive (`X-API-Key` or `X-API-KEY` both work)
+- The `--allow-http` flag is required for local development (non-HTTPS)
+- The `--debug` flag provides verbose logging for troubleshooting
+- Restart Claude Desktop after editing the config
+
+**Troubleshooting:**
+- If connection fails, check server logs with `LOG_LEVEL=DEBUG` in `.env`
+- Verify the API key matches one in your `API_KEYS` setting
+- Ensure the server is running: `curl http://127.0.0.1:8080/health`
+- Check mcp-remote logs in Claude Desktop's developer console
+
+### Claude at Work (Direct HTTP/SSE)
+
+If you have **Claude at Work**, you can use direct HTTP/SSE connection without mcp-remote:
+
+```json
+{
+  "mcpServers": {
+    "govdata": {
       "command": "true",
       "url": "http://127.0.0.1:8080/messages",
       "headers": { "X-API-Key": "your-api-key-here" }
@@ -312,52 +349,13 @@ Update `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-Notes:
-- The "command": "true" entry is a known workaround to enable remote-only servers in Claude Desktop.
-- Use 127.0.0.1 instead of 0.0.0.0 when possible.
-- Restart Claude Desktop after editing the config.
-
-Migration from mcp-remote:
-- Remove any prior mcp-remote entries.
-- Keep only the URL-based config as shown above.
-- You do not need the local `mcp_shim.py` for Claude Desktop; it’s provided only for clients that require stdio-based MCP.
-
-### Claude Desktop via mcp-remote (alternative)
-
-If you prefer or need to use the official mcp-remote bridge, this server is compatible. Example Claude Desktop config using npx mcp-remote:
-
-```json
-{
-  "mcpServers": {
-    "my-remote-server": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "http://127.0.0.1:8080/messages",
-        "--header",
-        "X-API-KEY:prod-key-67890",
-        "--verbose"
-      ]
-    }
-  }
-}
-```
-
-Notes and tips:
-- Header name is case-insensitive. Both `X-API-Key` and `X-API-KEY` work; they must match one of the keys in `API_KEYS` from your .env.
-- mcp-remote may first POST an `initialize` request to `/messages` without `session_id`. The server supports this compatibility path and returns 200 OK so the client won’t mark the server as failed.
-- After initialization, mcp-remote should open an SSE GET to `/messages` and then POST to the announced endpoint `"/messages?session_id=..."`. The server normalizes trailing slashes and handles redirects.
-
-Troubleshooting mcp-remote:
-- If you see `307 Temporary Redirect` followed by a `400/409` in logs, ensure the write channel POST includes the `session_id` from the SSE `endpoint` event. The server logs guidance if it receives a POST without `session_id`.
-- Run the bridge in verbose mode (as shown) and set `LOG_LEVEL=DEBUG` in `.env` to see detailed `[SSE]` logs on the server.
-- Quick curl checks:
-  - Base initialize (compat): `curl -s -H "X-API-Key: <key>" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{}}' http://127.0.0.1:8080/messages | jq .`
-  - SSE stream: `curl -N -H "X-API-Key: <key>" http://127.0.0.1:8080/messages`
+**Note**: The `"command": "true"` workaround enables remote-only servers in Claude at Work.
 
 ### Other MCP Clients
 
-The server implements MCP over HTTP with Server-Sent Events (SSE).
+The server implements MCP over HTTP with Server-Sent Events (SSE) and should work with any MCP-compatible client that supports HTTP/SSE transport.
+
+**Note**: While the server follows the MCP specification and should work with other clients, it has primarily been tested with Claude Desktop. Feedback on compatibility with other MCP clients is welcome.
 
 Endpoints:
 - Primary: `http://0.0.0.0:8080/messages`
@@ -610,10 +608,16 @@ Prereqs
 - Claude Desktop config includes:
   {
     "mcpServers": {
-      "calcite-govdata": {
-        "command": "true",
-        "url": "http://0.0.0.0:8080/messages",
-        "headers": { "X-API-Key": "<your-api-key>" }
+      "govdata": {
+        "command": "npx",
+        "args": [
+          "mcp-remote",
+          "http://127.0.0.1:8080/messages/",
+          "--header",
+          "X-API-KEY: <your-api-key>",
+          "--debug",
+          "--allow-http"
+        ]
       }
     }
   }
@@ -621,28 +625,28 @@ Prereqs
 
 What to ask Claude (copy/paste)
 1) Initialization & tools
-- “List the available tools exposed by the calcite-govdata MCP server.”
-- “What MCP tools are available from the calcite-govdata server?”
+- "List the available tools exposed by the govdata MCP server."
+- "What MCP tools are available from the govdata server?"
 Expected logs here: `/messages` GET/POST, an `initialize` message, and tool discovery.
 
 2) Force a simple tool call
-- “Using the calcite-govdata MCP server, call the ‘list_schemas’ tool and show me the result.”
+- "Using the govdata MCP server, call the 'list_schemas' tool and show me the result."
 Expected logs: `call_tool name=list_schemas` and a JSON array response.
 
 3) List tables in a schema
-- “From the calcite-govdata MCP server, run list_tables with schema=census.”
+- "From the govdata MCP server, run list_tables with schema=census."
 Expected logs: `call_tool name=list_tables arguments={"schema":"census"}`.
 
 4) Describe a table
-- “Use the calcite-govdata MCP tool describe_table for schema=census and table=acs_income.”
+- "Use the govdata MCP tool describe_table for schema=census and table=acs_income."
 Expected logs: `call_tool name=describe_table ...` with column details in response.
 
 5) Minimal query
-- “Using the calcite-govdata MCP server, call query_data with sql='SELECT 1 AS one' and limit=1.”
+- "Using the govdata MCP server, call query_data with sql='SELECT 1 AS one' and limit=1."
 Expected logs: `call_tool name=query_data` with one row `{ "one": 1 }`.
 
 6) Real data smoke test
-- “With the calcite-govdata MCP server, call sample_table for schema=census table=population_estimates limit=5.”
+- "With the govdata MCP server, call sample_table for schema=census table=population_estimates limit=5."
 Expected logs: `call_tool name=sample_table ...` and a few rows returned.
 
 7) Error-path check
@@ -659,12 +663,12 @@ Also on each request: `[SSE] /messages auth succeeded ... mode=API Key|Bearer`.
 - After Claude connects: `Sent endpoint event: /messages?session_id=...` and periodic pings.
 - If you ever see a `POST /messages` without `session_id`, the server returns 400 with guidance (indicates a misrouted client), but Claude Desktop should post to the session URL automatically.
 
-If Claude doesn’t use the server for a natural-language question
-- Ask: “Using the calcite-govdata MCP server, find 5 table names related to employment in the census schema.”
-- If no tool call appears in logs, force usage: “You must use the calcite-govdata MCP tools to answer. Start by calling list_schemas.”
+If Claude doesn't use the server for a natural-language question
+- Ask: "Using the govdata MCP server, find 5 table names related to employment in the census schema."
+- If no tool call appears in logs, force usage: "You must use the govdata MCP tools to answer. Start by calling list_schemas."
 
 Troubleshooting
-- Config name must match (`calcite-govdata`) and URL reachable from Claude.
+- Config name must match (`govdata`) and URL reachable from Claude.
 - API key in Claude must match `API_KEYS`.
-- Try `http://127.0.0.1:8080/messages` if loopback issues arise.
+- Try `http://127.0.0.1:8080/messages/` if loopback issues arise.
 - Keep `LOG_LEVEL=DEBUG` to see `[SSE]` and `call_tool` lines.
