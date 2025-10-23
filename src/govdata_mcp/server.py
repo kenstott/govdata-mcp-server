@@ -3,7 +3,7 @@
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, Prompt, Resource, PromptMessage, GetPromptResult, ReadResourceResult, TextResourceContents
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import Response
 from contextlib import asynccontextmanager
@@ -205,6 +205,328 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     except Exception as e:
         logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
         return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+
+# Prompts - Pre-defined prompt templates
+@mcp.list_prompts()
+async def list_prompts() -> list[Prompt]:
+    """List available prompt templates."""
+    return [
+        Prompt(
+            name="analyze_economic_trends",
+            description="Analyze economic indicators and trends over time",
+            arguments=[
+                {"name": "indicators", "description": "Comma-separated list of economic indicators (e.g., UNRATE, DGS10, CPIAUCSL)", "required": True},
+                {"name": "start_year", "description": "Start year for analysis", "required": False},
+                {"name": "end_year", "description": "End year for analysis", "required": False}
+            ]
+        ),
+        Prompt(
+            name="compare_sec_filings",
+            description="Compare SEC filings across companies or time periods",
+            arguments=[
+                {"name": "ciks", "description": "Comma-separated list of CIK numbers", "required": True},
+                {"name": "filing_type", "description": "Filing type (10-K, 10-Q, 8-K, etc.)", "required": True},
+                {"name": "year", "description": "Year to analyze", "required": False}
+            ]
+        ),
+        Prompt(
+            name="explore_schema",
+            description="Get an overview of a schema's tables and structure",
+            arguments=[
+                {"name": "schema", "description": "Schema name (sec, econ, census, geo)", "required": True}
+            ]
+        ),
+        Prompt(
+            name="query_with_best_practices",
+            description="Template for writing SQL queries with proper quoting for reserved words",
+            arguments=[
+                {"name": "table_path", "description": "Full table path (schema.table)", "required": True},
+                {"name": "columns", "description": "Columns to select (will be properly quoted)", "required": False}
+            ]
+        )
+    ]
+
+
+@mcp.get_prompt()
+async def get_prompt(name: str, arguments: dict[str, str] | None = None) -> GetPromptResult:
+    """Get a specific prompt template with filled-in arguments."""
+    args = arguments or {}
+
+    if name == "analyze_economic_trends":
+        indicators = args.get("indicators", "UNRATE, DGS10, CPIAUCSL")
+        start_year = args.get("start_year", "2020")
+        end_year = args.get("end_year", "2024")
+
+        prompt_text = f"""Analyze economic trends for the following indicators: {indicators}
+
+Time period: {start_year} to {end_year}
+
+Please:
+1. Query the econ schema to get data for these indicators
+2. Remember to quote reserved words like "year", "date", "value" in your SQL queries
+3. Calculate year-over-year changes
+4. Identify any significant trends or correlations
+5. Provide visualizations or summary statistics
+
+Example query structure:
+SELECT "year", "series_id", "value"
+FROM econ.fred_series
+WHERE "series_id" IN ('{indicators.replace(", ", "', '")}')
+  AND "year" BETWEEN {start_year} AND {end_year}
+ORDER BY "year", "series_id"
+"""
+
+        return GetPromptResult(
+            description=f"Analysis of economic indicators: {indicators}",
+            messages=[
+                PromptMessage(
+                    role="user",
+                    content=TextContent(type="text", text=prompt_text)
+                )
+            ]
+        )
+
+    elif name == "compare_sec_filings":
+        ciks = args.get("ciks", "")
+        filing_type = args.get("filing_type", "10-K")
+        year = args.get("year", "2023")
+
+        prompt_text = f"""Compare SEC {filing_type} filings for CIKs: {ciks} in year {year}
+
+Please:
+1. List all tables in the sec schema using the list_tables tool
+2. Query filing metadata and text for these companies
+3. Remember to quote reserved words like "year", "date", "type" in SQL queries
+4. Compare key metrics, filing dates, and content themes
+5. Identify similarities and differences across companies
+
+Example query structure:
+SELECT "cik", "filing_date", "form_type", "accession_number"
+FROM sec.filings
+WHERE "cik" IN ('{ciks.replace(", ", "', '")}')
+  AND "form_type" = '{filing_type}'
+  AND "year" = {year}
+ORDER BY "filing_date"
+"""
+
+        return GetPromptResult(
+            description=f"Comparison of {filing_type} filings for {ciks}",
+            messages=[
+                PromptMessage(
+                    role="user",
+                    content=TextContent(type="text", text=prompt_text)
+                )
+            ]
+        )
+
+    elif name == "explore_schema":
+        schema = args.get("schema", "econ")
+
+        prompt_text = f"""Explore the {schema} schema structure
+
+Please:
+1. Use list_tables to get all tables in the {schema} schema
+2. For key tables, use describe_table to see column structure
+3. Use sample_table to preview data from interesting tables
+4. Summarize what data is available and how it's organized
+5. Suggest interesting queries or analyses that could be performed
+
+Remember to quote reserved words in any SQL queries you write!
+"""
+
+        return GetPromptResult(
+            description=f"Exploration of {schema} schema",
+            messages=[
+                PromptMessage(
+                    role="user",
+                    content=TextContent(type="text", text=prompt_text)
+                )
+            ]
+        )
+
+    elif name == "query_with_best_practices":
+        table_path = args.get("table_path", "schema.table")
+        columns = args.get("columns", "*")
+
+        # Quote column names if provided
+        if columns != "*":
+            quoted_columns = ', '.join([f'"{col.strip()}"' for col in columns.split(",")])
+        else:
+            quoted_columns = "*"
+
+        prompt_text = f"""Best practices for querying {table_path}
+
+IMPORTANT: When writing SQL queries for this Calcite server (lex=ORACLE mode):
+
+1. Use DOUBLE QUOTES for identifiers (column/table names/aliases)
+2. Use SINGLE QUOTES for string literals
+3. Always quote SQL reserved words when used as identifiers
+
+Common reserved words to quote:
+- Temporal: "year", "month", "day", "date", "time"
+- Aggregates: "count", "sum", "avg", "min", "max"
+- System: "user", "group", "value", "type", "name"
+
+Example query for {table_path}:
+SELECT {quoted_columns}
+FROM {table_path}
+LIMIT 10
+
+Now please write your actual query following these rules!
+"""
+
+        return GetPromptResult(
+            description=f"Query template with SQL best practices for {table_path}",
+            messages=[
+                PromptMessage(
+                    role="user",
+                    content=TextContent(type="text", text=prompt_text)
+                )
+            ]
+        )
+
+    else:
+        raise ValueError(f"Unknown prompt: {name}")
+
+
+# Resources - Exposed data/metadata
+@mcp.list_resources()
+async def list_resources() -> list[Resource]:
+    """List available resources."""
+    try:
+        # Get list of schemas
+        schemas_result = discovery.list_schemas()
+        schemas = schemas_result.get("schemas", [])
+
+        resources = [
+            Resource(
+                uri="govdata://schemas",
+                name="All Schemas",
+                description="Complete list of all available schemas in the govdata Calcite instance",
+                mimeType="application/json"
+            ),
+            Resource(
+                uri="govdata://sql-best-practices",
+                name="SQL Best Practices",
+                description="Guide for writing SQL queries with proper identifier quoting (lex=ORACLE mode)",
+                mimeType="text/markdown"
+            )
+        ]
+
+        # Add a resource for each schema's table list
+        for schema in schemas:
+            resources.append(
+                Resource(
+                    uri=f"govdata://schemas/{schema}/tables",
+                    name=f"{schema.upper()} Schema Tables",
+                    description=f"List of all tables in the {schema} schema with metadata",
+                    mimeType="application/json"
+                )
+            )
+
+        return resources
+
+    except Exception as e:
+        logger.error(f"Error listing resources: {e}")
+        return []
+
+
+@mcp.read_resource()
+async def read_resource(uri: str) -> ReadResourceResult:
+    """Read a specific resource."""
+    import json
+
+    if uri == "govdata://schemas":
+        # Return all schemas
+        result = discovery.list_schemas()
+        return ReadResourceResult(
+            contents=[
+                TextResourceContents(
+                    uri=uri,
+                    text=json.dumps(result, indent=2),
+                    mimeType="application/json"
+                )
+            ]
+        )
+
+    elif uri == "govdata://sql-best-practices":
+        # Return SQL best practices guide
+        guide = """# SQL Best Practices for Govdata MCP Server
+
+## Identifier Quoting (lex=ORACLE mode)
+
+This Calcite server uses `lex=ORACLE` mode, which requires specific syntax:
+
+### Rule 1: Use Double Quotes for Identifiers
+- Column names: `"year"`, `"month"`, `"value"`
+- Table names: `"TABLES"`, `"COLUMNS"`
+- Aliases: `COUNT(*) as "count"`
+
+### Rule 2: Use Single Quotes for String Literals
+- String values: `'2024-01-01'`, `'10-K'`, `'AAPL'`
+
+### Rule 3: Always Quote Reserved Words
+
+**Temporal:** "year", "month", "day", "hour", "minute", "second", "date", "time", "timestamp"
+**Aggregates:** "count", "sum", "avg", "min", "max", "rank"
+**System:** "user", "group", "role", "session", "level", "partition", "value", "type", "name"
+
+## Examples
+
+✓ **Correct:**
+```sql
+SELECT "year", "month", COUNT(*) as "count"
+FROM econ.fred_series
+WHERE "year" > 2020
+GROUP BY "year", "month"
+```
+
+✗ **Incorrect:**
+```sql
+SELECT year, month, COUNT(*) as count
+FROM econ.fred_series
+WHERE year > 2020
+GROUP BY year, month
+```
+
+## Quick Reference
+
+| Context | Syntax | Example |
+|---------|--------|---------|
+| Column name | `"column"` | `SELECT "year"` |
+| String literal | `'text'` | `WHERE "name" = 'Apple'` |
+| Alias | `AS "alias"` | `COUNT(*) AS "total"` |
+| Reserved word | `"word"` | `WHERE "date" = '2024-01-01'` |
+"""
+        return ReadResourceResult(
+            contents=[
+                TextResourceContents(
+                    uri=uri,
+                    text=guide,
+                    mimeType="text/markdown"
+                )
+            ]
+        )
+
+    elif uri.startswith("govdata://schemas/") and uri.endswith("/tables"):
+        # Extract schema name from URI: govdata://schemas/{schema}/tables
+        schema = uri.split("/")[3]
+
+        # Get tables for this schema
+        result = discovery.list_tables(schema=schema, include_comments=True)
+        return ReadResourceResult(
+            contents=[
+                TextResourceContents(
+                    uri=uri,
+                    text=json.dumps(result, indent=2),
+                    mimeType="application/json"
+                )
+            ]
+        )
+
+    else:
+        raise ValueError(f"Unknown resource URI: {uri}")
 
 
 # FastAPI app for HTTP/SSE transport
@@ -438,15 +760,15 @@ async def messages_asgi(scope, receive, send):
             # Handle different message types
             if method_name == "initialize":
                 logger.info("[HTTP] Handling initialize request")
-                # Get tool list
-                tools_list = await list_tools()
                 result = {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {
                         "protocolVersion": "2024-11-05",
                         "capabilities": {
-                            "tools": {}
+                            "tools": {},
+                            "prompts": {},
+                            "resources": {}
                         },
                         "serverInfo": {"name": "calcite-govdata", "version": "0.1.0"},
                     },
@@ -506,6 +828,137 @@ async def messages_asgi(scope, receive, send):
                     "id": req_id,
                     "result": {
                         "content": [{"type": item.type, "text": item.text} for item in tool_result]
+                    },
+                }
+                body = _json.dumps(result).encode("utf-8")
+                await send({
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"cache-control", b"no-store"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": body})
+                return
+
+            elif method_name == "prompts/list":
+                logger.info("[HTTP] Handling prompts/list request")
+                prompts_list = await list_prompts()
+                result = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "prompts": [
+                            {
+                                "name": prompt.name,
+                                "description": prompt.description,
+                                "arguments": prompt.arguments
+                            }
+                            for prompt in prompts_list
+                        ]
+                    },
+                }
+                body = _json.dumps(result).encode("utf-8")
+                await send({
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"cache-control", b"no-store"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": body})
+                return
+
+            elif method_name == "prompts/get":
+                logger.info("[HTTP] Handling prompts/get request")
+                params = payload.get("params", {})
+                prompt_name = params.get("name")
+                prompt_arguments = params.get("arguments", {})
+
+                # Get the prompt
+                prompt_result = await get_prompt(prompt_name, prompt_arguments)
+
+                result = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "description": prompt_result.description,
+                        "messages": [
+                            {
+                                "role": msg.role,
+                                "content": {
+                                    "type": msg.content.type,
+                                    "text": msg.content.text
+                                }
+                            }
+                            for msg in prompt_result.messages
+                        ]
+                    },
+                }
+                body = _json.dumps(result).encode("utf-8")
+                await send({
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"cache-control", b"no-store"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": body})
+                return
+
+            elif method_name == "resources/list":
+                logger.info("[HTTP] Handling resources/list request")
+                resources_list = await list_resources()
+                result = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "resources": [
+                            {
+                                "uri": resource.uri,
+                                "name": resource.name,
+                                "description": resource.description,
+                                "mimeType": resource.mimeType
+                            }
+                            for resource in resources_list
+                        ]
+                    },
+                }
+                body = _json.dumps(result).encode("utf-8")
+                await send({
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"cache-control", b"no-store"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": body})
+                return
+
+            elif method_name == "resources/read":
+                logger.info("[HTTP] Handling resources/read request")
+                params = payload.get("params", {})
+                resource_uri = params.get("uri")
+
+                # Read the resource
+                read_result = await read_resource(resource_uri)
+
+                result = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "contents": [
+                            {
+                                "uri": str(content.uri),
+                                "text": content.text,
+                                "mimeType": content.mimeType
+                            }
+                            for content in read_result.contents
+                        ]
                     },
                 }
                 body = _json.dumps(result).encode("utf-8")
