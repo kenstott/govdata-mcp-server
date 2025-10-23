@@ -1,0 +1,62 @@
+# Dual License
+
+This project is available under dual licensing terms:
+
+## Option 1: GNU General Public License v3.0 (GPL-3.0)
+
+For open source projects and non-commercial use, this software is licensed under the GNU General Public License v3.0.
+
+See [LICENSE-GPL](LICENSE-GPL) for the complete GPL-3.0 license text.
+
+## Option 2: Commercial License
+
+For proprietary software, closed-source applications, or commercial use that is incompatible with GPL-3.0 terms, a separate commercial license is available.
+
+Contact for commercial licensing inquiries: kenneth.stott@gmail.com
+
+---
+
+## Which License Should I Choose?
+
+### Use GPL-3.0 if:
+-  Your project is open source
+-  You can share your source code and modifications
+-  Your project is GPL-compatible
+-  You're using it for research, education, or personal projects
+
+### Get Commercial License if:
+-  You're building proprietary/closed-source software
+-  You cannot or do not want to disclose your source code
+-  You're integrating into commercial products or SaaS
+-  Your project is incompatible with GPL-3.0 copyleft requirements
+
+---
+
+## What the Commercial License Provides
+
+With a commercial license, you can:
+- Use the software in proprietary applications without source disclosure
+- Distribute the software as part of closed-source products
+- Modify the software without GPL-3.0 obligations
+- Sublicense the software as part of your products
+
+---
+
+## Copyright
+
+Copyright (c) 2025 Kenneth Stott and Contributors
+
+## Notice
+
+By using this software, you agree to comply with the terms of whichever license you choose. If you do not obtain a commercial license, you must comply with all GPL-3.0 requirements including:
+- Disclosing your source code
+- Licensing derivative works under GPL-3.0
+- Providing attribution and license notices
+
+---
+
+## About This Project
+
+This is the Model Context Protocol (MCP) server for the govdata adapter, providing semantic access to US government data sources (Census, SEC, BLS, BEA) via Apache Calcite.
+
+**Dependencies**: This project requires the Apache Calcite fork with govdata adapter from [github.com/kenstott/calcite](https://github.com/kenstott/calcite), which has its own licensing terms.

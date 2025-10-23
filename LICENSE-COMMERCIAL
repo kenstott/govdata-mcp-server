@@ -1,0 +1,55 @@
+# Commercial License Agreement
+
+**IMPORTANT: This is a template. Actual commercial licenses must be negotiated and signed separately.**
+
+## Grant of License
+
+Subject to the terms and conditions of this Agreement and payment of applicable license fees, Licensor grants Licensee a non-exclusive, non-transferable license to:
+
+1. **Use** the software in commercial products and services
+2. **Modify** the software without disclosure obligations
+3. **Distribute** the software as part of proprietary applications
+4. **Sublicense** the software as incorporated in Licensee's products
+
+## Restrictions
+
+Licensee may not:
+- Redistribute the software as a standalone product
+- Remove or modify copyright notices
+- Use the Licensor's trademarks without permission
+
+## No GPL-3.0 Obligations
+
+This commercial license exempts Licensee from GPL-3.0 requirements including:
+- Source code disclosure
+- Copyleft licensing of derivative works
+- GPL-compatible licensing restrictions
+
+## Term and Termination
+
+- License is perpetual unless terminated for breach
+- Termination requires 30 days written notice for material breach
+- Upon termination, Licensee must cease use and destroy all copies
+
+## Support and Updates
+
+- Support and updates are subject to separate maintenance agreement
+- No warranty or support is provided unless explicitly contracted
+
+## Warranty Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+## Limitation of Liability
+
+IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---
+
+## Contact for Commercial Licensing
+
+To obtain a commercial license:
+- Email: kenneth.stott@gmail.com
+- Repository: https://github.com/kenstott/govdata-mcp-server
+
+**Note**: This template is for reference only. Actual commercial licenses require formal agreement execution.

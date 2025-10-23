@@ -296,7 +296,7 @@ Rule of thumb:
 
 ### Claude Desktop (Recommended)
 
-**Note**: The browser version of Claude does not support MCP servers unless you have Claude at Work.
+**Note**: The browser version of Claude does not support remote MCP servers unless you have Claude at Work.
 
 For **Claude Desktop**, use the mcp-remote bridge to connect to this HTTP/SSE server.
 
@@ -333,23 +333,35 @@ Update `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - Ensure the server is running: `curl http://127.0.0.1:8080/health`
 - Check mcp-remote logs in Claude Desktop's developer console
 
-### Claude at Work (Direct HTTP/SSE)
+### Claude at Work (Remote Deployment)
 
-If you have **Claude at Work**, you can use direct HTTP/SSE connection without mcp-remote:
+If you have **Claude at Work**, you can configure direct HTTP/SSE connection to a **remote** (publicly accessible) instance:
+
+**Requirements:**
+- Server must be hosted at a public URL (not localhost)
+- OIDC authentication must be configured (see Authentication section above)
+- HTTPS is strongly recommended for production
+
+**Example configuration:**
 
 ```json
 {
   "mcpServers": {
     "govdata": {
       "command": "true",
-      "url": "http://127.0.0.1:8080/messages",
-      "headers": { "X-API-Key": "your-api-key-here" }
+      "url": "https://your-mcp-server.example.com/messages",
+      "headers": {
+        "Authorization": "Bearer your-oidc-token"
+      }
     }
   }
 }
 ```
 
-**Note**: The `"command": "true"` workaround enables remote-only servers in Claude at Work.
+**Note**:
+- The `"command": "true"` workaround enables remote-only servers in Claude at Work
+- You must implement OIDC authentication (set OIDC_ENABLED=true, OIDC_ISSUER_URL, OIDC_AUDIENCE in .env)
+- API keys alone are not sufficient for Claude at Work - use proper OIDC tokens
 
 ### Other MCP Clients
 
