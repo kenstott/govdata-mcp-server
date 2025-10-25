@@ -1,0 +1,32 @@
+# Azure Configuration
+resource_group_name = "govdata-mcp-rg"
+location            = "eastus"
+prefix              = "govdata-mcp"
+
+# VM Configuration
+vm_size          = "Standard_D4s_v3"
+data_disk_size_gb = 2048
+admin_username   = "azureuser"
+
+# SSH Configuration
+ssh_public_key_path = "~/.ssh/id_rsa.pub"  # Path to your SSH public key
+admin_source_ip     = "YOUR_IP_ADDRESS/32"  # Change to your IP address (e.g., "1.2.3.4/32") for better security, or "*" to allow any
+
+# Domain Configuration
+domain    = "your-domain.com"  # Your domain name (e.g., "example.com")
+dns_label = "govdata-mcp"      # Creates <dns_label>.eastus.cloudapp.azure.com
+
+# SSL Configuration
+admin_email = "your-email@example.com"  # Email for Let's Encrypt certificate notifications
+
+# MinIO Configuration
+minio_root_user     = "minioadmin"  # Change to a secure username
+minio_root_password = "CHANGE_THIS_TO_A_SECURE_PASSWORD"  # IMPORTANT: Use a strong, random password!
+
+# Tags
+tags = {
+  Environment = "production"
+  Project     = "govdata-mcp-server"
+  ManagedBy   = "terraform"
+  Owner       = "Your Name"
+}

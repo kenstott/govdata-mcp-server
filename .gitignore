@@ -36,6 +36,8 @@ env/
 # Environment
 .env
 .env.local
+.env.production
+deploy/.env.production
 
 # Testing
 .pytest_cache/
@@ -50,3 +52,24 @@ htmlcov/
 .DS_Store
 Thumbs.db
 /.aperio/
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/*.tfvars.backup
+terraform/terraform.tfvars
+
+# Deployment artifacts
+*.tar.gz
+govdata-mcp-deploy.tar.gz
+deploy/nginx.conf
+
+# Claude Desktop (user-specific configs should not be committed)
+# The template files in claude-desktop/ are OK to commit
+
+# Logs
+logs/
+*.log
+*.log.*
