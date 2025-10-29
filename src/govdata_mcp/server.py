@@ -17,12 +17,10 @@ from .config import settings
 from .jdbc import initialize_connection, get_connection
 from .auth import verify_auth, headers_authenticated
 from .tools import discovery, query, profile, metadata, vector
+from .logging_config import setup_logging
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper()),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure logging (will write to logs/ directory and console)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -95,12 +93,36 @@ Examples:
   ✓ SELECT DISTINCT "area_type", COUNT(*) as "count" FROM econ.regional_employment GROUP BY "area_type"
   ✗ SELECT DISTINCT "area_type", COUNT(*) as count FROM econ.regional_employment GROUP BY "area_type"
 
-When in doubt, quote all identifiers (including aliases) to avoid syntax errors.""",
+When in doubt, quote all identifiers (including aliases) to avoid syntax errors.
+
+PERFORMANCE & TOKEN OPTIMIZATION:
+⚡ Push computation to SQL to minimize token usage! Avoid downloading large datasets.
+  ✓ Use JOINs instead of multiple queries
+  ✓ Use WHERE to filter server-side (not in context)
+  ✓ Use GROUP BY, COUNT, SUM, AVG for aggregation
+  ✓ Use CTEs and subqueries for complex logic
+  ✓ Use LIMIT to control result size
+  ✗ Don't download entire tables to filter/process in context
+
+For detailed optimization patterns, see the sql-best-practices resource.
+
+QUERY TIMEOUT:
+- Default timeout: 300 seconds (5 minutes)
+- For expensive queries (large JOINs, complex aggregations), increase timeout_seconds
+- Maximum timeout: 3600 seconds (1 hour)
+- Example: Set timeout_seconds=600 for a 10-minute query""",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "sql": {"type": "string", "description": "SQL query to execute"},
-                    "limit": {"type": "integer", "description": "Maximum rows to return", "default": 100}
+                    "limit": {"type": "integer", "description": "Maximum rows to return", "default": 100},
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "description": "Query timeout in seconds. Default: 300 (5 min), Max: 3600 (1 hour). Increase for expensive queries.",
+                        "default": 300,
+                        "minimum": 1,
+                        "maximum": 3600
+                    }
                 },
                 "required": ["sql"]
             }
@@ -411,6 +433,12 @@ async def list_resources() -> list[Resource]:
                 name="SQL Best Practices",
                 description="Guide for writing SQL queries with proper identifier quoting (lex=ORACLE mode)",
                 mimeType="text/markdown"
+            ),
+            Resource(
+                uri="govdata://connection-guide",
+                name="Direct Connection Guide",
+                description="Advanced: How to connect directly to the data source via JDBC (for generating standalone scripts)",
+                mimeType="text/markdown"
             )
         ]
 
@@ -498,6 +526,657 @@ GROUP BY year, month
 | String literal | `'text'` | `WHERE "name" = 'Apple'` |
 | Alias | `AS "alias"` | `COUNT(*) AS "total"` |
 | Reserved word | `"word"` | `WHERE "date" = '2024-01-01'` |
+
+## Query Optimization & Performance
+
+**IMPORTANT: Minimize token usage by computing in the database, not in your context.**
+
+### ❌ Inefficient Pattern (High Token Usage)
+```python
+# Query 1: Download entire reference table
+result1 = query_data("SELECT * FROM sec.companies")  # Returns 10,000 rows → many tokens!
+
+# Process in LLM context
+filtered_ciks = [row['cik'] for row in result1 if row['industry'] == 'Technology']
+
+# Query 2: Use filtered list
+result2 = query_data(f"SELECT * FROM sec.filings WHERE \"cik\" IN ({','.join(filtered_ciks)})")
+```
+
+**Problems:**
+- Downloads unnecessary data (wastes tokens)
+- Requires multiple round-trips
+- Processes data in LLM context (slow, expensive)
+
+### ✅ Efficient Pattern (Low Token Usage)
+```sql
+-- Single query with JOIN and WHERE (computed server-side)
+SELECT f.*, c."company_name", c."industry"
+FROM sec.filings f
+JOIN sec.companies c ON f."cik" = c."cik"
+WHERE c."industry" = 'Technology'
+  AND f."year" = 2024
+LIMIT 100
+```
+
+**Benefits:**
+- One query, minimal data transfer
+- All filtering/joining done in database
+- Returns only needed results
+
+### Best Practices for Performance
+
+#### 1. Use JOINs Instead of Multiple Queries (or Subqueries)
+**❌ Don't use multiple queries:**
+```sql
+-- Query 1: Get company info
+SELECT "cik", "company_name" FROM sec.companies WHERE "cik" = '0000320193'
+-- Query 2: Get filings
+SELECT * FROM sec.filings WHERE "cik" = '0000320193'
+```
+
+**❌ Don't use correlated subqueries (known issues):**
+```sql
+SELECT * FROM sec.companies c
+WHERE EXISTS (
+    SELECT 1 FROM sec.filings f
+    WHERE f."cik" = c."cik" AND f."year" = 2024
+)
+```
+
+**✅ Do use JOINs (reliable and fast):**
+```sql
+SELECT c."company_name", f."filing_date", f."form_type"
+FROM sec.filings f
+JOIN sec.companies c ON f."cik" = c."cik"
+WHERE c."cik" = '0000320193'
+
+-- Or for filtering by existence:
+SELECT DISTINCT c.*
+FROM sec.companies c
+JOIN sec.filings f ON f."cik" = c."cik"
+WHERE f."year" = 2024
+```
+
+#### 2. Filter Early with WHERE Clauses
+**❌ Don't:** Download everything and filter in context
+```sql
+SELECT * FROM econ.fred_series  -- Returns millions of rows!
+```
+
+**✅ Do:** Filter server-side
+```sql
+SELECT "year", "value"
+FROM econ.fred_series
+WHERE "series_id" = 'UNRATE'
+  AND "year" BETWEEN 2020 AND 2024
+```
+
+#### 3. Use Aggregates (GROUP BY, COUNT, SUM, AVG)
+**❌ Don't:** Download raw data to calculate statistics
+```sql
+SELECT "value" FROM econ.fred_series WHERE "series_id" = 'UNRATE'
+-- Then calculate average in LLM context
+```
+
+**✅ Do:** Aggregate in database
+```sql
+SELECT
+    "year",
+    AVG("value") as "avg_rate",
+    MIN("value") as "min_rate",
+    MAX("value") as "max_rate",
+    COUNT(*) as "data_points"
+FROM econ.fred_series
+WHERE "series_id" = 'UNRATE'
+GROUP BY "year"
+ORDER BY "year"
+```
+
+#### 4. Use CTEs for Multi-Step Logic (Avoid Correlated Subqueries)
+**✅ Multi-step analysis with CTE:**
+```sql
+WITH monthly_avg AS (
+    SELECT
+        "year",
+        "month",
+        AVG("value") as "avg_value"
+    FROM econ.fred_series
+    WHERE "series_id" = 'UNRATE'
+    GROUP BY "year", "month"
+)
+SELECT
+    "year",
+    "month",
+    "avg_value",
+    "avg_value" - LAG("avg_value") OVER (ORDER BY "year", "month") as "change"
+FROM monthly_avg
+ORDER BY "year", "month"
+```
+
+#### 5. Use LIMIT to Control Result Size
+Always include LIMIT unless you need all rows:
+```sql
+SELECT * FROM large_table LIMIT 100  -- Returns manageable dataset
+```
+
+#### 6. Leverage Window Functions for Analytics
+**✅ Calculate rankings and running totals in SQL:**
+```sql
+SELECT
+    "company_name",
+    "revenue",
+    RANK() OVER (ORDER BY "revenue" DESC) as "rank",
+    SUM("revenue") OVER (ORDER BY "revenue" DESC) as "running_total"
+FROM sec.company_metrics
+WHERE "year" = 2024
+```
+
+### Cross-Schema Joins
+All schemas share the same DuckDB database, enabling powerful cross-schema queries:
+
+```sql
+-- Join economic data with SEC filings
+SELECT
+    f."cik",
+    f."filing_date",
+    e."value" as "unemployment_rate"
+FROM sec.filings f
+JOIN econ.fred_series e
+    ON EXTRACT(YEAR FROM f."filing_date") = e."year"
+    AND EXTRACT(MONTH FROM f."filing_date") = e."month"
+WHERE e."series_id" = 'UNRATE'
+  AND f."form_type" = '10-K'
+LIMIT 100
+```
+
+### Performance Summary
+
+**🎯 Golden Rule: Do as much computation in SQL as possible.**
+
+- ✅ JOINs instead of multiple queries
+- ✅ WHERE clauses for filtering
+- ✅ GROUP BY for aggregation
+- ✅ Window functions for analytics
+- ✅ CTEs for complex logic
+- ✅ LIMIT to control result size
+- ❌ Avoid downloading large datasets to process in context
+
+**Result:** Faster queries, lower token usage, better performance.
+
+## Known SQL Limitations & Workarounds
+
+While most SQL features work well, there are some known issues with certain query patterns.
+
+### ⚠️ Correlated Subqueries - Use with Extreme Caution
+
+**Known Issues:**
+- Multi-level nested correlated subqueries may return **incorrect results**
+- DELETE statements with correlated WHERE clauses may **delete all rows** instead of filtered rows
+- Correlated subqueries with aggregate functions can produce **wrong answers**
+- Correlated subqueries in HAVING clauses are **not supported**
+
+**Recommendation: Always prefer JOINs over correlated subqueries.**
+
+**❌ Avoid (may produce incorrect results):**
+```sql
+-- Correlated subquery - has known issues
+SELECT * FROM sec.companies c
+WHERE EXISTS (
+    SELECT 1 FROM sec.filings f
+    WHERE f."cik" = c."cik"
+      AND f."year" = 2024
+)
+```
+
+**✅ Use instead (reliable and faster):**
+```sql
+-- JOIN-based approach - works correctly
+SELECT DISTINCT c.*
+FROM sec.companies c
+JOIN sec.filings f ON f."cik" = c."cik"
+WHERE f."year" = 2024
+```
+
+**❌ Especially avoid nested correlated subqueries:**
+```sql
+-- Two-level nested - produces wrong results!
+SELECT * FROM sec.companies c
+WHERE EXISTS (
+    SELECT 1 FROM sec.filings f
+    WHERE f."cik" = c."cik"
+      AND EXISTS (
+        SELECT 1 FROM sec.prices p
+        WHERE p."cik" = f."cik"
+      )
+)
+```
+
+**✅ Use multi-way JOINs instead:**
+```sql
+-- Reliable alternative
+SELECT DISTINCT c.*
+FROM sec.companies c
+JOIN sec.filings f ON f."cik" = c."cik"
+JOIN sec.prices p ON p."cik" = f."cik"
+```
+
+### ✅ CTEs (WITH Clause) - Generally Safe
+
+Common Table Expressions work well, including recursive CTEs.
+
+**✅ Simple CTE (works great):**
+```sql
+WITH high_value_companies AS (
+    SELECT "cik", "company_name"
+    FROM sec.companies
+    WHERE "market_cap" > 1000000000
+)
+SELECT c.*, f."filing_date"
+FROM high_value_companies c
+JOIN sec.filings f ON f."cik" = c."cik"
+WHERE f."year" = 2024
+```
+
+**✅ Recursive CTE (supported):**
+```sql
+WITH RECURSIVE number_series AS (
+    SELECT 1 as "n"
+    UNION ALL
+    SELECT "n" + 1
+    FROM number_series
+    WHERE "n" < 10
+)
+SELECT * FROM number_series
+```
+
+**⚠️ One Edge Case:** Avoid naming a CTE the same as an existing table name - can cause alias resolution issues.
+
+### ✅ Window Functions - Mostly Safe
+
+Window functions work well for analytics. Most common patterns are reliable:
+
+**✅ Safe patterns:**
+```sql
+-- Ranking
+SELECT "company_name", "revenue",
+       RANK() OVER (ORDER BY "revenue" DESC) as "rank"
+FROM sec.company_metrics
+
+-- Running totals
+SELECT "year", "value",
+       SUM("value") OVER (ORDER BY "year") as "cumulative"
+FROM econ.fred_series
+
+-- Period-over-period comparison
+SELECT "year", "month", "value",
+       LAG("value") OVER (ORDER BY "year", "month") as "prev_value"
+FROM econ.fred_series
+```
+
+**⚠️ Avoid these patterns:**
+- Nested window aggregates: `SUM(SUM("col")) OVER()` - throws exception
+- Window functions in LATERAL joins - not supported
+- Aggregate functions in PARTITION BY clause - causes errors
+
+### ✅ Standard SQL - Fully Reliable
+
+These patterns are well-tested and performant:
+- ✅ Regular JOINs (INNER, LEFT, RIGHT, FULL OUTER)
+- ✅ Subqueries in FROM clause (derived tables)
+- ✅ IN/NOT IN with static lists
+- ✅ UNION/UNION ALL
+- ✅ GROUP BY with aggregates
+- ✅ ORDER BY, LIMIT, OFFSET
+
+### Summary: Safe SQL Patterns
+
+**Preferred (fastest and most reliable):**
+1. JOINs for combining data
+2. WHERE for filtering
+3. GROUP BY for aggregation
+4. Window functions for analytics
+5. CTEs for readable complex queries
+
+**Avoid (buggy):**
+1. Correlated subqueries (especially nested)
+2. Complex window function patterns (nested aggregates)
+
+**When in doubt:** Test your query with a LIMIT first to verify results before running on full dataset.
+
+---
+
+**Note:** For advanced users who want to generate standalone scripts, see the [Direct Connection Guide](govdata://connection-guide).
+"""
+        return ReadResourceResult(
+            contents=[
+                TextResourceContents(
+                    uri=uri,
+                    text=guide,
+                    mimeType="text/markdown"
+                )
+            ]
+        )
+
+    elif uri == "govdata://connection-guide":
+        # Return direct connection guide for generating standalone scripts
+        guide = """# Direct Connection Guide (Advanced)
+
+**Audience:** Advanced users who need to generate standalone Python programs that connect directly to the data source.
+
+**When to use:** Only when users explicitly request standalone/portable scripts (e.g., "Write me a Python program to query...").
+
+## Architecture Overview
+
+The govdata-mcp-server uses a multi-layer architecture:
+
+```
+Python MCP Server
+    ↓ (JPype1)
+Apache Calcite JDBC Driver (govdata adapter)
+    ↓ (JDBC)
+DuckDB Query Engine
+    ↓
+Data Storage (S3/MinIO Parquet files)
+```
+
+## Prerequisites
+
+### 1. Java Development Kit (JDK)
+- **Version:** JDK 11 or later
+- **Download:** https://adoptium.net/
+
+### 2. Python Dependencies
+```bash
+pip install JPype1==1.5.0
+pip install pandas  # optional, for DataFrame support
+```
+
+### 3. Required JAR Files
+
+Download and place in a `lib/` directory:
+
+**Primary JAR** (required):
+- `calcite-govdata-1.41.0-SNAPSHOT-all.jar` - Calcite with govdata adapter
+- Download from your deployment or build from source
+
+**Optional JARs** (recommended for full functionality):
+- `slf4j-reload4j-2.0.13.jar` - For Calcite logging
+- `duckdb-jdbc-1.1.3.jar` - DuckDB JDBC driver (may be bundled in main JAR)
+
+## Connection Details
+
+### JDBC Connection String
+```
+jdbc:calcite:model=${MODEL_JSON_PATH};lex=ORACLE;unquotedCasing=TO_LOWER
+```
+
+**Parameters:**
+- `model` - Path to Calcite model JSON file (see below)
+- `lex=ORACLE` - Use Oracle-style identifier quoting (double quotes)
+- `unquotedCasing=TO_LOWER` - Convert unquoted identifiers to lowercase
+
+### Model JSON File
+
+Create a `model.json` file defining your data sources. Minimal example:
+
+```json
+{
+  "version": "1.0",
+  "defaultSchema": "econ",
+  "schemas": [
+    {
+      "name": "econ",
+      "type": "custom",
+      "factory": "org.apache.calcite.adapter.govdata.GovDataSchemaFactory",
+      "operand": {
+        "sources": ["FRED", "BLS"],
+        "parquetDir": "s3://govdata-parquet",
+        "cacheDir": "s3://govdata-production-cache",
+        "startYear": 2010,
+        "endYear": 2024,
+        "executionEngine": "DUCKDB",
+        "duckdb": {
+          "database": "shared.duckdb"
+        }
+      }
+    }
+  ]
+}
+```
+
+**Key fields:**
+- `factory` - Custom schema factory class for govdata adapter
+- `parquetDir` - S3/MinIO path to Parquet data files
+- `cacheDir` - S3/MinIO path for caching
+- `executionEngine` - Set to "DUCKDB" for best performance
+- `duckdb.database` - Shared DuckDB database file
+
+### Environment Variables
+
+Your script will need these environment variables:
+
+```bash
+# S3/MinIO Configuration (required)
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export AWS_ENDPOINT_OVERRIDE="http://localhost:9000"  # MinIO endpoint
+
+# Government API Keys (optional, depends on data sources)
+export FRED_API_KEY="your-fred-api-key"
+export BLS_API_KEY="your-bls-api-key"
+export BEA_API_KEY="your-bea-api-key"
+export CENSUS_API_KEY="your-census-api-key"
+```
+
+## Python Code Template
+
+```python
+#!/usr/bin/env python3
+\"\"\"
+Standalone script to query govdata via Apache Calcite.
+
+Prerequisites:
+  pip install JPype1 pandas
+
+Environment variables required:
+  - AWS_ACCESS_KEY_ID
+  - AWS_SECRET_ACCESS_KEY
+  - AWS_ENDPOINT_OVERRIDE (for MinIO)
+  - FRED_API_KEY, BLS_API_KEY, etc. (depending on data sources)
+\"\"\"
+
+import jpype
+import jpype.dbapi2 as dbapi2
+import sys
+import os
+
+# Configuration - REPLACE THESE PLACEHOLDERS
+CALCITE_JAR_PATH = "${CALCITE_JAR_PATH}"  # e.g., "/path/to/calcite-govdata-1.41.0-SNAPSHOT-all.jar"
+MODEL_JSON_PATH = "${MODEL_JSON_PATH}"    # e.g., "/path/to/model.json"
+
+def initialize_jvm(jar_path):
+    \"\"\"Initialize JVM with Calcite JAR.\"\"\"
+    if not jpype.isJVMStarted():
+        print(f"Starting JVM with JAR: {jar_path}")
+        jpype.startJVM(
+            classpath=jar_path,
+            "-Xmx4g",  # Max heap size
+            "-Xms1g",  # Initial heap size
+            convertStrings=False
+        )
+        print("JVM started successfully")
+    else:
+        print("JVM already running")
+
+def connect_to_calcite(model_path):
+    \"\"\"Create JDBC connection to Calcite.\"\"\"
+    jdbc_url = f"jdbc:calcite:model={model_path};lex=ORACLE;unquotedCasing=TO_LOWER"
+    print(f"Connecting to: {jdbc_url}")
+
+    connection = dbapi2.connect(
+        jdbc_url,
+        driver="org.apache.calcite.jdbc.Driver"
+    )
+    print("Connected successfully")
+    return connection
+
+def execute_query(connection, sql):
+    \"\"\"Execute SQL query and return results.\"\"\"
+    cursor = connection.cursor()
+    try:
+        print(f"Executing: {sql}")
+        cursor.execute(sql)
+
+        # Get column names
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
+
+        # Fetch all rows
+        rows = cursor.fetchall()
+
+        return columns, rows
+    finally:
+        cursor.close()
+
+def main():
+    \"\"\"Main execution.\"\"\"
+    # Verify environment variables
+    required_vars = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+    missing = [v for v in required_vars if not os.getenv(v)]
+    if missing:
+        print(f"Error: Missing required environment variables: {missing}", file=sys.stderr)
+        sys.exit(1)
+
+    # Initialize JVM
+    initialize_jvm(CALCITE_JAR_PATH)
+
+    # Connect to Calcite
+    connection = connect_to_calcite(MODEL_JSON_PATH)
+
+    try:
+        # Example query - REMEMBER TO QUOTE RESERVED WORDS!
+        sql = \"\"\"
+            SELECT "year", "series_id", "value"
+            FROM econ.fred_series
+            WHERE "series_id" = 'UNRATE'
+              AND "year" >= 2020
+            ORDER BY "year"
+            LIMIT 10
+        \"\"\"
+
+        columns, rows = execute_query(connection, sql)
+
+        # Print results
+        print(f"\\nResults ({len(rows)} rows):")
+        print(" | ".join(columns))
+        print("-" * 60)
+        for row in rows:
+            print(" | ".join(str(v) for v in row))
+
+    finally:
+        connection.close()
+        print("\\nConnection closed")
+
+if __name__ == "__main__":
+    main()
+```
+
+## Usage Instructions
+
+1. **Set up environment:**
+   ```bash
+   # Install Python dependencies
+   pip install JPype1 pandas
+
+   # Set environment variables
+   export AWS_ACCESS_KEY_ID="your-key"
+   export AWS_SECRET_ACCESS_KEY="your-secret"
+   export AWS_ENDPOINT_OVERRIDE="http://localhost:9000"
+   ```
+
+2. **Customize the script:**
+   - Replace `${CALCITE_JAR_PATH}` with actual JAR path
+   - Replace `${MODEL_JSON_PATH}` with actual model.json path
+   - Modify the SQL query as needed
+
+3. **Run:**
+   ```bash
+   python your_script.py
+   ```
+
+## Important Notes
+
+### SQL Syntax
+- **Always use double quotes for identifiers** (see [SQL Best Practices](govdata://sql-best-practices))
+- Reserved words like `"year"`, `"date"`, `"value"` must be quoted
+- String literals use single quotes: `'2024-01-01'`
+
+### Data Access
+- Data is fetched from government APIs and cached as Parquet files
+- First queries may be slow as data is downloaded
+- Subsequent queries use cached Parquet files for speed
+
+### Security
+- Never commit credentials to version control
+- Use environment variables or secure credential management
+- Consider using IAM roles for AWS/S3 access in production
+
+### Performance
+- JVM heap size (`-Xmx`) may need adjustment for large queries
+- DuckDB execution engine provides best performance
+- Shared DuckDB database enables cross-schema joins
+
+## Alternatives to JDBC
+
+### Option 1: DuckDB CLI (if data is local)
+If you have Parquet files locally, query directly with DuckDB:
+
+```bash
+duckdb shared.duckdb
+```
+
+```sql
+SELECT * FROM read_parquet('econ/fred_series/*.parquet') LIMIT 10;
+```
+
+### Option 2: Python DuckDB (native)
+```python
+import duckdb
+
+conn = duckdb.connect('shared.duckdb')
+df = conn.execute(\"\"\"
+    SELECT * FROM read_parquet('s3://govdata-parquet/econ/fred_series/*.parquet')
+    LIMIT 10
+\"\"\").df()
+```
+
+Note: This bypasses Calcite entirely and accesses Parquet files directly.
+
+## Troubleshooting
+
+### "ClassNotFoundException: org.apache.calcite.jdbc.Driver"
+- Verify JAR path is correct
+- Ensure JAR contains the Calcite JDBC driver
+
+### "Cannot find model file"
+- Use absolute path for model.json
+- Verify file exists and is readable
+
+### "Connection refused" or S3 errors
+- Check AWS environment variables
+- Verify MinIO/S3 endpoint is accessible
+- Test with AWS CLI: `aws s3 ls s3://govdata-parquet/`
+
+### Slow queries
+- First query downloads data from APIs (slow)
+- Subsequent queries use cached Parquet (fast)
+- Check logs for download progress
+
+## Getting Help
+
+- Review MCP server logs for configuration examples
+- Check `govdata-model.json` in the server deployment
+- See Calcite documentation: https://calcite.apache.org/docs/
 """
         return ReadResourceResult(
             contents=[
@@ -853,7 +1532,14 @@ async def messages_asgi(scope, receive, send):
                             {
                                 "name": prompt.name,
                                 "description": prompt.description,
-                                "arguments": prompt.arguments
+                                "arguments": [
+                                    {
+                                        "name": arg.name,
+                                        "description": arg.description,
+                                        "required": arg.required
+                                    }
+                                    for arg in (prompt.arguments or [])
+                                ]
                             }
                             for prompt in prompts_list
                         ]
@@ -918,7 +1604,7 @@ async def messages_asgi(scope, receive, send):
                     "result": {
                         "resources": [
                             {
-                                "uri": resource.uri,
+                                "uri": str(resource.uri),
                                 "name": resource.name,
                                 "description": resource.description,
                                 "mimeType": resource.mimeType
