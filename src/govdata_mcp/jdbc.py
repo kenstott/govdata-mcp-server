@@ -94,6 +94,7 @@ class CalciteConnection:
             # Import log4j classes (works with reload4j as well)
             Logger = jpype.JClass("org.apache.log4j.Logger")
             ConsoleAppender = jpype.JClass("org.apache.log4j.ConsoleAppender")
+            RollingFileAppender = jpype.JClass("org.apache.log4j.RollingFileAppender")
             PatternLayout = jpype.JClass("org.apache.log4j.PatternLayout")
             Level = jpype.JClass("org.apache.log4j.Level")
 
@@ -105,10 +106,32 @@ class CalciteConnection:
 
             root_logger.setLevel(Level.INFO)
 
-            # Create console appender with pattern
+            # Create pattern layout
             pattern = "%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1}:%L - %m%n"
-            console_appender = ConsoleAppender(PatternLayout(pattern))
+            layout = PatternLayout(pattern)
+
+            # Create console appender
+            console_appender = ConsoleAppender(layout)
             root_logger.addAppender(console_appender)
+
+            # Create logs directory if it doesn't exist
+            log_dir = Path(__file__).parent.parent.parent / "logs"
+            log_dir.mkdir(exist_ok=True)
+
+            # Create rolling file appender for Java/Calcite logs
+            java_log_file = str(log_dir / "govdata_calcite.log")
+            file_appender = RollingFileAppender(
+                PatternLayout(pattern),
+                java_log_file,
+                True  # append mode
+            )
+            # Set max file size to 10MB
+            file_appender.setMaxFileSize("10MB")
+            # Keep 5 backup files
+            file_appender.setMaxBackupIndex(5)
+            root_logger.addAppender(file_appender)
+
+            logger.info(f"log4j file appender configured: {java_log_file}")
 
             # Reduce AWS SDK verbosity
             Logger.getLogger("com.amazonaws").setLevel(Level.WARN)
@@ -124,7 +147,7 @@ class CalciteConnection:
             govdata_logger = Logger.getLogger("org.apache.calcite.adapter.govdata")
             govdata_logger.setLevel(Level.DEBUG)
 
-            logger.info("log4j configured programmatically")
+            logger.info("log4j configured programmatically with console and file appenders")
 
             # Test that Java logging is working by emitting a test log statement
             test_logger = Logger.getLogger("govdata_mcp.test")
@@ -176,18 +199,29 @@ class CalciteConnection:
             self.connect()
         return self._connection.cursor()
 
-    def execute_query(self, sql: str) -> Tuple[List[str], List[Tuple]]:
+    def execute_query(self, sql: str, timeout_seconds: int = 300) -> Tuple[List[str], List[Tuple]]:
         """
         Execute SQL query and return column names and rows.
 
         Args:
             sql: SQL query to execute
+            timeout_seconds: Query timeout in seconds (default 300, max 3600)
 
         Returns:
             Tuple of (column_names, rows)
         """
         cursor = self.get_cursor()
         try:
+            # Set query timeout using JDBC's setQueryTimeout method
+            # This is a standard JDBC method that works with JPype's dbapi2 cursors
+            try:
+                # JPype exposes the underlying Java object, allowing us to call JDBC methods
+                if hasattr(cursor, '_stmt') and cursor._stmt is not None:
+                    cursor._stmt.setQueryTimeout(timeout_seconds)
+                    logger.debug(f"Set query timeout to {timeout_seconds} seconds")
+            except Exception as e:
+                logger.warning(f"Could not set query timeout: {e}. Query will run without timeout.")
+
             cursor.execute(sql)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
             rows = cursor.fetchall()
