@@ -7,13 +7,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def query_data(sql: str, limit: int = 100) -> Dict[str, Any]:
+def query_data(sql: str, limit: int = 100, timeout_seconds: int = 300) -> Dict[str, Any]:
     """
     Execute a SQL query against the Calcite data lake and return results.
 
     Args:
         sql: SQL query to execute
         limit: Maximum number of rows to return (default 100)
+        timeout_seconds: Query timeout in seconds (default 300, max 3600)
 
     Returns:
         Dictionary with columns and rows
@@ -26,7 +27,7 @@ def query_data(sql: str, limit: int = 100) -> Dict[str, Any]:
         query = f"{query} LIMIT {limit}"
 
     try:
-        columns, rows = conn.execute_query(query)
+        columns, rows = conn.execute_query(query, timeout_seconds=timeout_seconds)
         # Convert rows to list of lists for JSON serialization
         rows_list = [list(row) for row in rows]
 
