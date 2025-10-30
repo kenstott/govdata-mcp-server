@@ -16,7 +16,7 @@ import sys
 from .config import settings
 from .jdbc import initialize_connection, get_connection
 from .auth import verify_auth, headers_authenticated
-from .tools import discovery, query, profile, metadata, vector
+from .tools import discovery, query, profile, metadata, vector, analytics
 from .logging_config import setup_logging
 
 # Configure logging (will write to logs/ directory and console)
@@ -193,6 +193,121 @@ QUERY TIMEOUT:
                 "required": ["schema", "table"]
             }
         ),
+        Tool(
+            name="detect_outliers",
+            description="Detect statistical outliers in query results using machine learning (Isolation Forest) or Z-score methods. Returns anomalous rows for investigation.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sql": {"type": "string", "description": "SQL query returning data to analyze"},
+                    "id_column": {"type": "string", "description": "Column name to use as identifier (for follow-up queries)"},
+                    "method": {
+                        "type": "string",
+                        "enum": ["isolation_forest", "zscore"],
+                        "default": "isolation_forest",
+                        "description": "Detection method: isolation_forest (ML-based) or zscore (3-sigma rule)"
+                    },
+                    "contamination": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 0.5,
+                        "default": 0.1,
+                        "description": "Expected proportion of outliers (0.1 = 10%)"
+                    },
+                    "features": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Specific columns to analyze (default: all numeric columns)"
+                    },
+                    "n_samples": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 20,
+                        "description": "Max number of outlier examples to return"
+                    }
+                },
+                "required": ["sql"]
+            }
+        ),
+        Tool(
+            name="cluster_analysis",
+            description="Discover natural groupings in data using K-Means or DBSCAN clustering. Returns cluster statistics and sample members.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sql": {"type": "string", "description": "SQL query returning data to analyze"},
+                    "method": {
+                        "type": "string",
+                        "enum": ["kmeans", "dbscan"],
+                        "default": "kmeans",
+                        "description": "Clustering algorithm: kmeans or dbscan (density-based)"
+                    },
+                    "n_clusters": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 20,
+                        "default": 5,
+                        "description": "Number of clusters for K-Means"
+                    },
+                    "eps": {
+                        "type": "number",
+                        "minimum": 0.01,
+                        "default": 0.5,
+                        "description": "Distance threshold for DBSCAN"
+                    },
+                    "min_samples": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "default": 5,
+                        "description": "Minimum samples per cluster for DBSCAN"
+                    },
+                    "features": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Specific columns to analyze (default: all numeric columns)"
+                    },
+                    "id_column": {"type": "string", "description": "Column name to use as identifier"},
+                    "n_samples_per_cluster": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                        "default": 5,
+                        "description": "Number of sample rows per cluster"
+                    }
+                },
+                "required": ["sql"]
+            }
+        ),
+        Tool(
+            name="correlation_analysis",
+            description="Calculate correlation matrix to find relationships between variables. Identifies strong correlations and multicollinearity.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sql": {"type": "string", "description": "SQL query returning data to analyze"},
+                    "features": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Specific columns to correlate (default: all numeric columns)"
+                    },
+                    "method": {
+                        "type": "string",
+                        "enum": ["pearson", "spearman"],
+                        "default": "pearson",
+                        "description": "Correlation method: pearson (linear) or spearman (rank-based)"
+                    },
+                    "threshold": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                        "default": 0.0,
+                        "description": "Only return correlations with absolute value above threshold"
+                    }
+                },
+                "required": ["sql"]
+            }
+        ),
     ]
 
 
@@ -218,6 +333,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             result = vector.semantic_search(**arguments)
         elif name == "list_vector_sources":
             result = vector.list_vector_sources(**arguments)
+        elif name == "detect_outliers":
+            result = analytics.detect_outliers(**arguments)
+        elif name == "cluster_analysis":
+            result = analytics.cluster_analysis(**arguments)
+        elif name == "correlation_analysis":
+            result = analytics.correlation_analysis(**arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
 
